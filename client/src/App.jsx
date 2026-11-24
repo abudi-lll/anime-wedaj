@@ -1,10 +1,12 @@
-import React, { useEffect, useState, createContext, useContext } from "react";
+import React, { useEffect, useState, useRef, createContext, useContext } from "react";
 import { Routes, Route, Link, useNavigate, useParams } from "react-router-dom";
 import {
   Search, Play, Crown, Menu, X, LogOut, ShieldCheck,
   Film, CheckCircle, ArrowRight
 } from "lucide-react";
 import api from "./api";
+import videojs from "video.js";
+import "video.js/dist/video-js.css";
 
 const AuthContext = createContext(null);
 const useAuth = () => useContext(AuthContext);
@@ -379,6 +381,59 @@ function AnimeDetail() {
   );
 }
 
+function AnimeVideoPlayer({ src }) {
+  const containerRef = useRef(null);
+  const playerRef = useRef(null);
+
+  useEffect(() => {
+    if (!src || !containerRef.current) return;
+
+    const videoElement = document.createElement("video-js");
+
+    videoElement.classList.add(
+      "vjs-big-play-centered"
+    );
+
+    containerRef.current.appendChild(videoElement);
+
+    const player = videojs(videoElement, {
+      controls: true,
+      responsive: true,
+      fluid: true,
+      preload: "auto",
+      playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
+      controlBar: {
+        volumePanel: { inline: false }
+      }
+    });
+
+    playerRef.current = player;
+
+    player.src({
+      src,
+      type: "video/mp4"
+    });
+
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.dispose();
+        playerRef.current = null;
+      }
+
+      if (containerRef.current) {
+        containerRef.current.innerHTML = "";
+      }
+    };
+  }, [src]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="video-js-wrapper"
+    />
+  );
+}
+
 function VideoArea({ item }) {
   const { user } = useAuth();
   const [selected, setSelected] = useState(null);
@@ -485,9 +540,7 @@ function VideoArea({ item }) {
 
       {videoUrl && (
         <div className="video-frame">
-          <video key={videoUrl} controls playsInline src={videoUrl}>
-            Your browser does not support video playback.
-          </video>
+          <AnimeVideoPlayer src={videoUrl} />
         </div>
       )}
 
@@ -880,8 +933,8 @@ function Account() {
           <p>
             {active
               ? `Your access expires ${new Date(
-                  user.subscription.expiresAt
-                ).toLocaleDateString()}`
+                user.subscription.expiresAt
+              ).toLocaleDateString()}`
               : "Choose a Pro plan to unlock premium titles."}
           </p>
         </div>
@@ -1017,6 +1070,67 @@ function Admin() {
     }));
   };
 
+
+
+  const uploadVideo = async (onSuccess) => {
+    try {
+      setMessage("");
+
+      const timestamp = Math.floor(Date.now() / 1000);
+
+      const configResponse = await api.post(
+        "/admin/anime/upload-signature",
+        { timestamp, source: "uw" }
+      );
+
+      const { apiKey, cloudName } = configResponse.data;
+
+      const widget = window.cloudinary.createUploadWidget(
+        {
+          cloudName,
+          apiKey,
+          resourceType: "video",
+          sources: ["local"],
+          multiple: false,
+          folder: "anime-wedaj/videos",
+          clientAllowedFormats: ["mp4", "mov", "mkv", "webm"],
+          maxFileSize: 5000000000,
+          maxChunkSize: 20000000,
+
+          uploadSignature: (callback, paramsToSign) => {
+            api.post("/admin/anime/upload-signature", {
+              timestamp: paramsToSign.timestamp,
+              source: "uw"
+            })
+              .then(response => callback(response.data.signature))
+              .catch(() => {
+                setMessage("Could not generate upload signature.");
+              });
+          }
+        },
+        (error, result) => {
+          if (error) {
+            setMessage(error.message || "Video upload failed.");
+            return;
+          }
+
+          if (result?.event === "success") {
+            onSuccess(result.info.secure_url);
+            setMessage("Video uploaded successfully.");
+          }
+        }
+      );
+
+      widget.open();
+    } catch (error) {
+      setMessage(
+        error.response?.data?.message || "Could not start video upload."
+      );
+    }
+  };
+
+
+
   const addEpisode = () => {
     setForm(current => ({
       ...current,
@@ -1135,7 +1249,28 @@ function Admin() {
             <label className="field-label">Release year<input type="number" value={form.releaseYear} onChange={e => setForm({ ...form, releaseYear: e.target.value })} /></label>
             <label className="field-label">Type<select value={form.type} onChange={e => setForm({ ...form, type: e.target.value, episodes: [], videoUrl: "" })}><option value="series">Series</option><option value="movie">Movie</option></select></label>
             {form.type === "movie" ? <>
-              <label className="field-label">Movie video URL<input required value={form.videoUrl} onChange={e => setForm({ ...form, videoUrl: e.target.value })} placeholder="Authorized video URL" /></label>
+
+              <label className="field-label">
+                Movie video URL
+                <input
+                  required
+                  value={form.videoUrl}
+                  onChange={e => setForm({ ...form, videoUrl: e.target.value })}
+                  placeholder="Paste video URL or upload below"
+                />
+              </label>
+
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={busy}
+                onClick={() => uploadVideo(url =>
+                  setForm(current => ({ ...current, videoUrl: url }))
+                )}
+              >
+                Upload movie from computer
+              </button>
+
               <label className="check-label"><input type="checkbox" checked={form.isFree} onChange={e => setForm({ ...form, isFree: e.target.checked })} /> Free movie (unchecked = Pro only)</label>
             </> : <div className="episode-editor">
               <div className="section-heading"><h3>Series episodes</h3><button type="button" className="btn secondary" onClick={addEpisode}>+ Add episode</button></div>
@@ -1143,7 +1278,27 @@ function Admin() {
               {form.episodes.map((ep, index) => <div className="episode-edit-card" key={index}>
                 <div className="payment-top"><b>Episode {ep.episodeNumber}</b><button type="button" className="text-link" onClick={() => removeEpisode(index)}>Remove</button></div>
                 <label className="field-label">Episode title<input required value={ep.title} onChange={e => updateEpisode(index, "title", e.target.value)} /></label>
-                <label className="field-label">Video URL<input required value={ep.videoUrl} onChange={e => updateEpisode(index, "videoUrl", e.target.value)} placeholder="Authorized video URL" /></label>
+
+                <label className="field-label">
+                  Video URL
+                  <input
+                    required
+                    value={ep.videoUrl}
+                    onChange={e => updateEpisode(index, "videoUrl", e.target.value)}
+                    placeholder="Paste video URL or upload below"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => uploadVideo(url =>
+                    updateEpisode(index, "videoUrl", url)
+                  )}
+                >
+                  Upload episode from computer
+                </button>
+
                 <label className="check-label"><input type="checkbox" checked={ep.isFree} onChange={e => updateEpisode(index, "isFree", e.target.checked)} /> Free episode (unchecked = Pro only)</label>
               </div>)}
             </div>}

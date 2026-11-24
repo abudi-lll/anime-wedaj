@@ -5,6 +5,7 @@ import Payment from "../models/Payment.js";
 import User from "../models/User.js";
 import cloudinary from "../config/cloudinary.js";
 import { protect, adminOnly } from "../middleware/auth.js";
+import videoUpload from "../middleware/videoUpload.js";
 
 const router = Router();
 
@@ -123,7 +124,7 @@ router.patch("/payments/:id", async (req, res) => {
 
       const currentExpiry =
         user.subscription?.status === "active" &&
-        user.subscription.expiresAt > now
+          user.subscription.expiresAt > now
           ? user.subscription.expiresAt
           : now;
 
@@ -195,9 +196,9 @@ router.post("/anime", async (req, res) => {
       genres: Array.isArray(genres)
         ? genres
         : String(genres || "")
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean),
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
       releaseYear,
       type,
       videoUrl,
@@ -212,6 +213,45 @@ router.post("/anime", async (req, res) => {
     res.status(500).json({ message: "Could not add anime." });
   }
 });
+
+// ==============================
+// GENERATE SECURE CLOUDINARY UPLOAD SIGNATURE
+// ==============================
+
+router.post("/anime/upload-signature", async (req, res) => {
+  try {
+    const { timestamp, source } = req.body;
+    const folder = "anime-wedaj/videos";
+
+    if (
+      !Number.isInteger(timestamp) ||
+      source !== "uw" ||
+      Math.abs(Math.floor(Date.now() / 1000) - timestamp) > 300
+    ) {
+      return res.status(400).json({
+        message: "Invalid upload signature parameters."
+      });
+    }
+
+    const signature = cloudinary.utils.api_sign_request(
+      { folder, source, timestamp },
+      process.env.CLOUDINARY_API_SECRET
+    );
+
+    res.status(200).json({
+      signature,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME
+    });
+  } catch (error) {
+    console.error("Cloudinary signature error:", error);
+
+    res.status(500).json({
+      message: "Could not generate upload signature."
+    });
+  }
+});
+
 
 // ==============================
 // LIST ALL ANIME FOR ADMIN
@@ -262,9 +302,9 @@ router.put("/anime/:id", async (req, res) => {
       anime.genres = Array.isArray(genres)
         ? genres
         : String(genres)
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean);
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
     }
 
     if (releaseYear !== undefined) anime.releaseYear = releaseYear;
