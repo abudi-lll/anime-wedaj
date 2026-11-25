@@ -7,6 +7,8 @@ import {
 import api from "./api";
 import videojs from "video.js";
 import "video.js/dist/video-js.css";
+import { Plyr } from "plyr-react";
+import "plyr-react/plyr.css";
 
 const AuthContext = createContext(null);
 const useAuth = () => useContext(AuthContext);
@@ -380,57 +382,35 @@ function AnimeDetail() {
     </section>
   );
 }
-
 function AnimeVideoPlayer({ src }) {
-  const containerRef = useRef(null);
-  const playerRef = useRef(null);
-
-  useEffect(() => {
-    if (!src || !containerRef.current) return;
-
-    const videoElement = document.createElement("video-js");
-
-    videoElement.classList.add(
-      "vjs-big-play-centered"
-    );
-
-    containerRef.current.appendChild(videoElement);
-
-    const player = videojs(videoElement, {
-      controls: true,
-      responsive: true,
-      fluid: true,
-      preload: "auto",
-      playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
-      controlBar: {
-        volumePanel: { inline: false }
-      }
-    });
-
-    playerRef.current = player;
-
-    player.src({
-      src,
-      type: "video/mp4"
-    });
-
-    return () => {
-      if (playerRef.current) {
-        playerRef.current.dispose();
-        playerRef.current = null;
-      }
-
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
-    };
-  }, [src]);
-
   return (
-    <div
-      ref={containerRef}
-      className="video-js-wrapper"
-    />
+    <div className="plyr-wrapper">
+      <Plyr
+        key={src}
+        source={{
+          type: "video",
+          sources: [{ src, type: "video/mp4" }]
+        }}
+        options={{
+          controls: [
+            "play-large",
+            "rewind",
+            "play",
+            "fast-forward",
+            "progress",
+            "current-time",
+            "mute",
+            "volume",
+            "settings",
+            "pip",
+            "fullscreen"
+          ],
+          seekTime: 10,
+          settings: ["speed"],
+          speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] }
+        }}
+      />
+    </div>
   );
 }
 
