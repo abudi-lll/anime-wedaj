@@ -633,10 +633,11 @@ function Subscribe() {
 
   const config = {
     telebirr: import.meta.env.VITE_TELEBIRR_NUMBER ||
-      "Ask admin for the Telebirr number",
+      "Telebirr number-0910144357 : CBE-1000704572011 (Ask admin for confirmation)",
     bank: import.meta.env.VITE_BANK_DETAILS ||
       "Ask admin for bank details"
   };
+
 
   if (!validPlan) {
     return (
